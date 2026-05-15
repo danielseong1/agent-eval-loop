@@ -22,11 +22,45 @@ def _setup_auth() -> str:
     return host
 
 
+def _setup_uc_tracing():
+    """Route traces to the UC tables backing this experiment."""
+    from mlflow.entities.trace_location import UCSchemaLocation
+
+    client = mlflow.MlflowClient()
+    experiment = client.get_experiment(EXPERIMENT_ID)
+    tags = experiment.tags  # already a dict
+
+    # e.g. "ds_fs.agent_quality_demo.4310327943608311_otel_spans"
+    span_table = tags.get("mlflow.experiment.databricksTraceSpanStorageTable", "")
+    log_table = tags.get("mlflow.experiment.databricksTraceLogStorageTable", "")
+
+    if not span_table:
+        print("WARNING: No UC span table tag found on experiment; traces will go to MySQL.")
+        return
+
+    parts = span_table.split(".")
+    catalog, schema, spans_table_name = parts[0], parts[1], parts[2]
+    logs_table_name = log_table.split(".")[2] if log_table else None
+
+    location = UCSchemaLocation(catalog_name=catalog, schema_name=schema)
+    location._otel_spans_table_name = spans_table_name
+    if logs_table_name:
+        location._otel_logs_table_name = logs_table_name
+
+    mlflow.tracing.set_destination(location)
+    print(f"UC tracing destination: {catalog}.{schema} (spans → {spans_table_name})")
+
+
 def main():
     host = _setup_auth()
 
     mlflow.set_tracking_uri("databricks")
     mlflow.set_experiment(experiment_id=EXPERIMENT_ID)
+
+    # Route traces to UC tables instead of the default MySQL-backed store.
+    # The experiment tags tell us the actual span table name (experiment-ID-prefixed).
+    _setup_uc_tracing()
+
     # Auto-trace OpenAI calls nested inside run_agent
     mlflow.openai.autolog()
 
