@@ -1,5 +1,6 @@
 """Run the SQL agent on 200 sample questions and log traces to MLflow."""
 
+import configparser
 import os
 import time
 import mlflow
@@ -8,11 +9,23 @@ from agent import run_agent
 from questions import get_questions
 
 EXPERIMENT_ID = "4310327943608311"
-DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST", "https://dogfood.staging.databricks.com")
+PROFILE = os.environ.get("DATABRICKS_CONFIG_PROFILE", "DOGFOOD")
+
+
+def _setup_auth() -> str:
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.expanduser("~/.databrickscfg"))
+    host = cfg[PROFILE]["host"].rstrip("/")
+    token = cfg[PROFILE]["token"]
+    os.environ.setdefault("DATABRICKS_HOST", host)
+    os.environ.setdefault("DATABRICKS_TOKEN", token)
+    return host
 
 
 def main():
-    mlflow.set_tracking_uri(DATABRICKS_HOST)
+    host = _setup_auth()
+
+    mlflow.set_tracking_uri("databricks")
     mlflow.set_experiment(experiment_id=EXPERIMENT_ID)
     # Auto-trace OpenAI calls nested inside run_agent
     mlflow.openai.autolog()
@@ -37,7 +50,7 @@ def main():
         time.sleep(0.2)
 
     print(f"\nDone. {len(questions) - failed} succeeded, {failed} failed.")
-    print(f"View traces: {DATABRICKS_HOST}/ml/experiments/{EXPERIMENT_ID}")
+    print(f"View traces: {host}/ml/experiments/{EXPERIMENT_ID}")
 
 
 if __name__ == "__main__":
