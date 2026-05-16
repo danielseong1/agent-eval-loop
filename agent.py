@@ -26,6 +26,14 @@ def get_client() -> OpenAI:
 
 
 @mlflow.trace
+def parse_sql(response: str) -> str:
+    """Extract SQL from a ```sql ... ``` code block in the model response."""
+    start = response.index("```sql") + 6
+    end = response.index("```", start)
+    return response[start:end].strip()
+
+
+@mlflow.trace
 def run_agent(question: str) -> str:
     client = get_client()
     model = os.environ.get("MODEL_NAME", "databricks-meta-llama-3-3-70b-instruct")
@@ -37,6 +45,7 @@ def run_agent(question: str) -> str:
             {"role": "user", "content": question},
         ],
         max_tokens=400,
-        temperature=0.1,
+        temperature=0.4,
     )
-    return response.choices[0].message.content
+    raw = response.choices[0].message.content
+    return parse_sql(raw)
